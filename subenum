@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Check if domain is provided
+if [ -z "$1" ]; then
+    echo "Usage: subenum <domain>"
+    exit 1
+fi
+
+# Dependency checks
+DEPENDENCIES=("subfinder" "sublist3r" "knockpy" "assetfinder" "waybackurls" "httprobe" "eyewitness" "jq" "whatweb")
+for dep in "${DEPENDENCIES[@]}"; do
+    if ! command -v "$dep" &> /dev/null; then
+        echo "Error: $dep not installed or not in PATH."
+        exit 1
+    fi
+done
+
+DOMAIN=$1
+OUTPUT_DIR="$HOME/subenum_results"
+TEMP_FILE="$OUTPUT_DIR/temp_subdomains.txt"
+FINAL_FILE="$OUTPUT_DIR/final_subdomains.txt"
+ALIVE_FILE="$OUTPUT_DIR/alive_subdomains.txt"
+
+# Create output directory
+mkdir -p "$OUTPUT_DIR"
+
+# Clear previous results
+> "$TEMP_FILE"
+
+# Subdomain Enumeration
+echo "[+] Running subfinder..."
+subfinder -d "$DOMAIN" -silent >> "$TEMP_FILE"
+
+echo "[+] Running sublist3r..."
+sublist3r -d "$DOMAIN" -o "$OUTPUT_DIR/sublist3r.txt" -n 2>/dev/null
+cat "$OUTPUT_DIR/sublist3r.txt" >> "$TEMP_FILE" 2>/dev/null
+
+echo "[+] Running crt.sh..."
+curl -s "https://crt.sh/?q=%25.$DOMAIN&output=json" | jq -r '.[].name_value' 2>/dev/null | sed 's/\*\.//g' | sed '/^$/d' >> "$TEMP_FILE"
+
+echo "[+] Running knockpy..."
+mkdir -p "$OUTPUT_DIR/knockpy_output"
+knockpy --save "$OUTPUT_DIR/knockpy_output" "$DOMAIN" >/dev/null 2>&1
+grep -oP '[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' "$OUTPUT_DIR/knockpy_output/"*".csv" 2>/dev/null >> "$TEMP_FILE"
+
+echo "[+] Running assetfinder..."
+assetfinder --subs-only "$DOMAIN" >> "$TEMP_FILE"
+
+echo "[+] Running waybackurls..."
+waybackurls "$DOMAIN" | grep -oP '[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | grep "$DOMAIN" >> "$TEMP_FILE"
+
+echo "[+] Running certspotter..."
+curl -s "https://api.certspotter.com/v1/issuances?domain=$DOMAIN&include_subdomains=true&expand=dns_names" -H "Authorization: Bearer k58426_PPjFy44Tuw3WEYajm0BL" | jq -r '.[].dns_names[]' 2>/dev/null | sed 's/\*\.//g' | sed '/^$/d' >> "$TEMP_FILE"
+
+# Remove duplicates and invalid domains
+echo "[+] Cleaning up results..."
+sort -u "$TEMP_FILE" | grep -E "^([a-zA-Z0-9.-]+\.)?$DOMAIN" > "$FINAL_FILE"
+
+# Check for alive subdomains
+echo "[+] Checking for alive subdomains with httprobe..."
+cat "$FINAL_FILE" | httprobe -c 50 -t 3000 | sed 's/http[s]\?:\/\///g' > "$ALIVE_FILE"
+
+# Run whatweb on alive targets
+echo "[+] Running whatweb..."
+whatweb -i "$ALIVE_FILE" --no-errors --color=never --log-verbose="$OUTPUT_DIR/whatweb_scan.txt" >/dev/null
+
+# Run eyewitness on alive subdomains
+echo "[+] Running eyewitness..."
+eyewitness -f "$ALIVE_FILE" --web --no-prompt -d "$OUTPUT_DIR/eyewitness_report" >/dev/null 2>&1
+
+echo "[+] Done! Results saved in $OUTPUT_DIR"
