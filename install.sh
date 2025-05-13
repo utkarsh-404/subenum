@@ -1,8 +1,3 @@
-
----
-
-### **install.sh** (Installation Script)
-```bash
 #!/bin/bash
 
 # Install Dependencies
