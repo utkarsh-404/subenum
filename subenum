@@ -50,7 +50,7 @@ echo "[+] Running waybackurls..."
 waybackurls "$DOMAIN" | grep -oP '[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | grep "$DOMAIN" >> "$TEMP_FILE"
 
 echo "[+] Running certspotter..."
-curl -s "https://api.certspotter.com/v1/issuances?domain=$DOMAIN&include_subdomains=true&expand=dns_names" -H "Authorization: Bearer k58426_PPjFy44Tuw3WEYajm0BL" | jq -r '.[].dns_names[]' 2>/dev/null | sed 's/\*\.//g' | sed '/^$/d' >> "$TEMP_FILE"
+curl -s "https://api.certspotter.com/v1/issuances?domain=$DOMAIN&include_subdomains=true&expand=dns_names" -H "Authorization: Bearer $CERTSPOTTER_API_KEY" | jq -r '.[].dns_names[]' 2>/dev/null | sed 's/\*\.//g' | sed '/^$/d' >> "$TEMP_FILE"
 
 # Remove duplicates and invalid domains
 echo "[+] Cleaning up results..."
